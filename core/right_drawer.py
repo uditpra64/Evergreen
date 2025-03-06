@@ -14,7 +14,7 @@ from kivy.core.text import LabelBase
 from kivy.uix.button import Button
 
 
-LabelBase.register(name="TimesNewRoman", fn_regular="font/times.ttf")
+LabelBase.register(name="Munro", fn_regular="font/Munro.ttf")
 
 class RightDrawer(MDNavigationDrawer):
     task_manager = ObjectProperty(None)
@@ -42,7 +42,7 @@ class RightDrawer(MDNavigationDrawer):
             text="[i]'Do it for your future self'[/i]",
             markup=True,        
             font_style="H4",    
-            font_name="TimesNewRoman",
+            font_name="Munro",
             halign="center",
             size_hint_y=None,
             height=dp(50)
