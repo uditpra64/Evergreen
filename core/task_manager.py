@@ -16,13 +16,12 @@ class TaskManager(Subject, MDBoxLayout):
 
         self.tasks = []
 
-    def add_task(self, title, priority=1):
+    def add_task(self, title, priority=Task.PRIORITY_MEDIUM):
         """
-        Insert task into the list - priority is kept for backward compatibility
-        but isn't actually used for sorting anymore
+        Insert task into the list with the specified priority
         """
         task = Task(title, priority)
-        self.tasks.append(task)  # Just append instead of using heapq
+        self.tasks.append(task)
         self.notify("TASK_ADDED", task)
         self.update_display()
 
@@ -48,13 +47,17 @@ class TaskManager(Subject, MDBoxLayout):
 
     def update_display(self):
         """
-        Clear existing widgets, rebuild the UI with tasks in order of addition
+        Clear existing widgets, rebuild the UI with tasks sorted by priority
         """
         # Clear the layout
         self.clear_widgets()
 
-        # Display tasks in order (no priority sorting)
-        for task in self.tasks:
+        # Sort tasks by priority (high to low)
+        # __lt__ in Task class already does reverse comparison, so don't use reverse=True
+        sorted_tasks = sorted(self.tasks)
+        
+        # Display tasks in priority order
+        for task in sorted_tasks:
             # Create a row for each task
             row_item = self._build_task_row(task)
             self.add_widget(row_item)
@@ -62,9 +65,11 @@ class TaskManager(Subject, MDBoxLayout):
     def _build_task_row(self, task):
         """
         Build a UI row for the given task with complete and delete buttons
+        Include priority information in the display
         """
+        priority_label = task.get_priority_label()
         row = OneLineAvatarIconListItem(
-            text=f"{task.title}{' [DONE]' if task.completed else ''}"
+            text=f"{task.title} [{priority_label}]{' [DONE]' if task.completed else ''}"
         )
         
         # Create an action buttons container

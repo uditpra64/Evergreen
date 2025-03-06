@@ -42,20 +42,28 @@ class StudyScreen(MDScreen):
             )
         self.bind(size=self.update_rect, pos=self.update_rect)
 
+        # 1) Create a centered root layout
+        main_layout = FloatLayout()
+        self.add_widget(main_layout)
+
         # 1) AnchorLayout to center everything on the screen
         anchor_layout = AnchorLayout(
             anchor_x="center",
-            anchor_y="center"
+            anchor_y="center",
+            size_hint=(1, 1)
         )
-        self.add_widget(anchor_layout)
+        main_layout.add_widget(anchor_layout)
 
         # Create an overlay MDBoxLayout for interactive widgets
         self.interactive_layout = MDBoxLayout(
             orientation='vertical',
             spacing=dp(20),
-            padding=dp(20),
-            width=dp(400),   # Adjust as desired
-            height=dp(300)   # Adjust as desired
+            padding=dp(30),
+            width=dp(400),
+            height=dp(300),
+            size_hint=(None, None),
+            pos_hint={"center_x": 0.5, "center_y": 0.5},
+            md_bg_color=(0, 0, 0, 0.3)  # Semi-transparent black background
         )
         anchor_layout.add_widget(self.interactive_layout)
         
@@ -66,9 +74,8 @@ class StudyScreen(MDScreen):
             font_size="28sp",
             halign="center",
             bold=True, 
-            color=(1, 1, 1, 1),  # Changed to WHITE text
+            color=(1, 1, 1, 1),  # WHITE text
             size_hint=(1, None),
-            width=dp(380),
             height=dp(60)
         )
         # Ensure the label sizes to its text
@@ -78,19 +85,21 @@ class StudyScreen(MDScreen):
         # 4) Input row for text field
         self.input_row = MDBoxLayout(
             orientation='horizontal',
-            spacing=dp(10)
+            spacing=dp(10),
+            size_hint_x=0.8,
+            pos_hint={"center_x": 0.5}
         )
         self.interactive_layout.add_widget(self.input_row)
 
-        # 5) White text box with black border
+        # 5) White text box with white text
+        # Removed text_color parameter that was causing the error
         self.input_field = MDTextField(
             hint_text="Enter hours (0.5 or more)",
-            size_hint=(None, None),
-            width=dp(300),
+            size_hint=(1, None),
             height=dp(60),
             mode="rectangle",  
             line_color_focus=(1, 1, 1, 1),  # White border when active
-            line_color_normal=(1, 1, 1, 1),  # White border when inactive
+            line_color_normal=(1, 1, 1, 0.7),  # White border when inactive
             foreground_color=(1, 1, 1, 1),  # White text color
             background_color=(0.2, 0.2, 0.2, 0.3),  # Darker semi-transparent background
             hint_text_color=(1, 1, 1, 0.7),  # White hint text with slight transparency
@@ -103,9 +112,11 @@ class StudyScreen(MDScreen):
         self.submit_button = MDRaisedButton(
             text="Submit",
             font_name="Munro",
+            size_hint=(None, None),
             width=dp(200),
             height=dp(50),
             font_size="30sp",
+            pos_hint={"center_x": 0.5},
             on_release=self.on_submit
         )
         self.interactive_layout.add_widget(self.submit_button)
@@ -116,7 +127,9 @@ class StudyScreen(MDScreen):
             halign="center",
             font_style="Subtitle1",
             font_size="20sp",
-            pos_hint={"center_x": 0.5, "center_y": 0.65},
+            theme_text_color="Custom",
+            text_color=(1, 1, 1, 1),
+            pos_hint={"center_x": 0.5},
             opacity=0  
         )
         self.interactive_layout.add_widget(self.confirmation_label)
@@ -132,7 +145,7 @@ class StudyScreen(MDScreen):
             pos_hint={"right": 0.95, "top": 0.95},
             on_release=self.go_back
         )
-        self.add_widget(self.back_button)
+        main_layout.add_widget(self.back_button)
 
     def update_rect(self, *args):
         """Keep the background rectangle size in sync with the screen."""
@@ -153,6 +166,11 @@ class StudyScreen(MDScreen):
             if hours < 0.5:
                 self.show_validation_dialog("Minimum study time is 0.5 hours (30 minutes).")
                 return
+            
+            # Add burnout warning for study sessions longer than 24 hours
+            if hours > 24:
+                self.show_burnout_warning(hours)
+                return
                 
         except ValueError:
             self.show_validation_dialog("Invalid number!")
@@ -172,6 +190,46 @@ class StudyScreen(MDScreen):
         self.show_feedback(f"Great! You've set {hours} {hour_label_text} with {pomodoro_sessions} Pomodoro sessions.", color=(0,1,0,1))
 
         # Switch to tree screen after a short delay (e.g., 1 second)
+        Clock.schedule_once(lambda dt: self.switch_to_tree_screen(), 2)
+
+    def show_burnout_warning(self, hours):
+        """Show a warning dialog for study sessions longer than 24 hours"""
+        dialog = MDDialog(
+            title="Burnout Warning",
+            text="Studying for more than 24 hours is not recommended and may lead to burnout. Would you like to proceed anyway or adjust your study time?",
+            buttons=[
+                MDFlatButton(
+                    text="ADJUST TIME",
+                    font_name="Munro",
+                    on_release=lambda x: dialog.dismiss()
+                ),
+                MDFlatButton(
+                    text="PROCEED ANYWAY",
+                    font_name="Munro",
+                    on_release=lambda x: self.proceed_with_long_session(dialog, hours)
+                )
+            ]
+        )
+        dialog.open()
+        
+    def proceed_with_long_session(self, dialog, hours):
+        """Proceed with the long study session despite the warning"""
+        dialog.dismiss()
+        
+        # If valid, store in StudyData (nested dictionary) with today's date
+        today_str = date.today().isoformat()
+        self.study_data.set_study_hours(today_str, hours)
+
+        # Determine the correct wording for "hour" vs. "hours"
+        hour_label_text = "hours"  # Will always be plural since > 24
+        
+        # Calculate expected Pomodoro sessions
+        pomodoro_sessions = int(hours * 60 / 30)  # 30 min per Pomodoro cycle
+        
+        # Show success message with additional caution
+        self.show_feedback(f"Set {hours} {hour_label_text} with {pomodoro_sessions} Pomodoro sessions. Remember to take breaks!", color=(1,0.7,0,1))
+
+        # Switch to tree screen after a short delay
         Clock.schedule_once(lambda dt: self.switch_to_tree_screen(), 2)
 
     def switch_to_tree_screen(self):

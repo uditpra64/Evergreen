@@ -20,7 +20,7 @@ from kivymd.uix.progressbar import MDProgressBar
 from kivy.uix.screenmanager import Screen, ScreenManager
 from kivy.metrics import dp
 from kivy.animation import Animation
-
+from datetime import date
 from cloud import Cloud
 from core.pomodoro import PomodoroWidget, PomodoroState
 from core.right_drawer import RightDrawer
@@ -157,7 +157,7 @@ class PomodoroCard(MDCard):
             digit_container.add_widget(digit_label)
             self.timer_layout.add_widget(digit_container)
 
-        # Fix for laps display - display actual remaining laps without +1
+        # Display the exact number of laps remaining without adjustment
         self.sessions_label.text = f"Sessions left: {laps_remaining}"
     
     def get_parent_screen(self):
@@ -253,9 +253,15 @@ class TreeScreen(MDScreen):
         )
         self.layout.add_widget(self.back_button)
 
-        # Create PomodoroCard using the actual total_study_hours
-        self.pomodoro_card = PomodoroCard(self.total_study_hours)
+
+        # Get only current day's study hours instead of cumulative total
+        today_str = date.today().isoformat()
+        current_day_hours = study_data.get_data()["study_hours"].get(today_str, 0)
+        
+        # Create PomodoroCard using ONLY the current day's hours
+        self.pomodoro_card = PomodoroCard(current_day_hours)
         self.layout.add_widget(self.pomodoro_card)
+
         # Timer will start in on_enter
 
         # Clouds
@@ -499,7 +505,19 @@ class TreeScreen(MDScreen):
         
         # Update status label
         if self.pomodoro_card.pomo_widget.current_state != PomodoroState.DONE:
-            laps_text = f"Lap {self.pomodoro_card.pomo_widget.laps_completed + 1}/{self.pomodoro_card.pomo_widget.total_laps}"
+            # Calculate current lap number properly based on Pomodoro state
+            if self.pomodoro_card.pomo_widget.current_state == PomodoroState.WORK:
+                # During work periods, we're on lap number = completed laps + 1
+                current_lap = self.pomodoro_card.pomo_widget.laps_completed + 1
+            else:
+                # During break periods, we've just completed a lap, so current lap = completed laps
+                current_lap = self.pomodoro_card.pomo_widget.laps_completed
+                
+            # Ensure we never display more than the total laps
+            current_lap = min(current_lap, self.pomodoro_card.pomo_widget.total_laps)
+            total_laps = self.pomodoro_card.pomo_widget.total_laps
+            
+            laps_text = f"Lap {current_lap}/{total_laps}"
             self.status_label.text = f"{state_text} Session - {laps_text}"
         else:
             self.status_label.text = "All sessions completed!"
@@ -523,8 +541,6 @@ class TreeScreen(MDScreen):
         )
         self.dialog.open()
 
-    # Updated reset_and_go_back method for TreeScreen class
-
     def reset_and_go_back(self):
         """Reset timer, tasks, and go back to study screen"""
         self.dialog.dismiss()
@@ -535,6 +551,10 @@ class TreeScreen(MDScreen):
         # Reset task manager
         if self.task_manager:
             self.task_manager.reset_all_tasks()
+            
+        # Ensure the right drawer updates its task list
+        if hasattr(self, 'right_drawer') and self.right_drawer:
+            self.right_drawer.refresh_task_list()
         
         # Reset elapsed minutes and tree growth
         self.elapsed_minutes = 0

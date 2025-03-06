@@ -71,20 +71,34 @@ class PomodoroWidget(Subject, Widget):
         # Initially not running
         self.timer_running = False
 
+    
     def _compute_laps_from_hours(self):
         """
         We assume 1 Pomodoro cycle = (work_duration + break_duration) = 30 minutes by default.
         If user enters X hours, we compute how many full cycles fit.
         E.g. 5 hours => 5 * 60 = 300 minutes => 300 // 30 = 10 laps.
         """
-        total_study_seconds = int(self.study_hours * 3600)
-        lap_cycle = self.work_duration + self.break_duration  # e.g. 1500 + 300 = 1800 (30 min)
-
-        possible_laps = total_study_seconds // lap_cycle
+        # Convert hours to minutes
+        total_minutes = int(self.study_hours * 60)
+        
+        # Each lap is work + break, typically 25 + 5 = 30 minutes
+        minutes_per_lap = (self.work_duration + self.break_duration) / 60  # Convert seconds to minutes
+        
+        # Calculate how many full laps fit in the time
+        possible_laps = int(total_minutes / minutes_per_lap)
+        
+        # Ensure at least 1 lap
         if possible_laps < 1:
-            possible_laps = 1  # Ensure at least 1 lap if user input is small
-
+            possible_laps = 1
+        
+        # Set the total laps
         self.total_laps = possible_laps
+        
+        # Debug output to verify
+        print(f"Study hours: {self.study_hours}")
+        print(f"Total minutes: {total_minutes}")
+        print(f"Minutes per lap: {minutes_per_lap}")
+        print(f"Calculated laps: {possible_laps}")
 
     def _build_circular_blocks(self):
         """
@@ -203,7 +217,17 @@ class PomodoroWidget(Subject, Widget):
         Also dispatch an event for observers if needed.
         """
         if self.update_callback:
-            laps_remaining = max(self.total_laps - self.laps_completed, 0)
+            # Calculate exactly how many laps remain
+            if self.current_state == PomodoroState.DONE:
+                laps_remaining = 0
+            else:
+                # For both work and break states, calculate remaining full laps
+                # This includes the current lap that's in progress
+                laps_remaining = max(0, self.total_laps - self.laps_completed)
+                
+                # Debug print to verify calculations
+                print(f"Total laps: {self.total_laps}, Completed: {self.laps_completed}, Remaining: {laps_remaining}")
+                
             block_type = "work" if self.current_state == PomodoroState.WORK else "break"
             self.update_callback(self.time_left_str, block_type, laps_remaining)
 

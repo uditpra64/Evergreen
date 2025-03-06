@@ -12,6 +12,8 @@ from kivy.properties import ObjectProperty
 from kivy.core.text import LabelBase
 from kivy.uix.button import Button
 from kivymd.uix.dialog import MDDialog
+from kivy.uix.dropdown import DropDown
+from kivy.uix.spinner import Spinner
 
 LabelBase.register(name="Munro", fn_regular="font/Munro.ttf")
 
@@ -55,13 +57,23 @@ class RightDrawer(MDNavigationDrawer):
         )
         layout.add_widget(self.task_input)
 
-        # Buttons row
-        buttons_row = BoxLayout(
+        # Create input row for task creation
+        input_row = BoxLayout(
             orientation='horizontal',
             size_hint_y=None,
             height=dp(40),
             spacing=dp(10)
         )
+        
+        # Priority dropdown spinner
+        self.priority_spinner = Spinner(
+            text='Medium',
+            values=('Low', 'Medium', 'High'),
+            size_hint_x=0.3,
+            size_hint_y=None,
+            height=dp(40)
+        )
+        input_row.add_widget(self.priority_spinner)
         
         # Button to add tasks
         add_task_btn = Button(
@@ -70,12 +82,22 @@ class RightDrawer(MDNavigationDrawer):
             height=dp(40)
         )
         add_task_btn.bind(on_release=self.add_task)
-        buttons_row.add_widget(add_task_btn)
+        input_row.add_widget(add_task_btn)
+        
+        layout.add_widget(input_row)
+        
+        # Buttons row for clearing tasks
+        buttons_row = BoxLayout(
+            orientation='horizontal',
+            size_hint_y=None,
+            height=dp(40),
+            spacing=dp(10)
+        )
         
         # Button to clear all tasks
         clear_tasks_btn = Button(
             text="Clear All",
-            size_hint_x=0.3,
+            size_hint_x=1.0,
             height=dp(40),
             background_color=(0.8, 0.2, 0.2, 1)  # Red background
         )
@@ -120,7 +142,7 @@ class RightDrawer(MDNavigationDrawer):
 
     def add_task(self, *args):
         """
-        Create a new Task and add it to the TaskManager.
+        Create a new Task and add it to the TaskManager with priority.
         Then refresh the UI to show the new task.
         """
         if self.task_manager is None:
@@ -129,8 +151,19 @@ class RightDrawer(MDNavigationDrawer):
             
         title = self.task_input.text.strip()
         if title:
-            # Add task without priority
-            self.task_manager.add_task(title)
+            # Get priority from spinner
+            priority_text = self.priority_spinner.text
+            
+            # Convert text priority to Task priority constant
+            if priority_text == "Low":
+                priority = Task.PRIORITY_LOW
+            elif priority_text == "High":
+                priority = Task.PRIORITY_HIGH
+            else:
+                priority = Task.PRIORITY_MEDIUM
+                
+            # Add task with priority
+            self.task_manager.add_task(title, priority)
             self.task_input.text = ""
             self.refresh_task_list()
 
@@ -168,6 +201,7 @@ class RightDrawer(MDNavigationDrawer):
     def refresh_task_list(self):
         """
         Clears the tasks_layout and rebuilds it with the latest tasks.
+        Tasks are displayed in order of priority (high to low).
         """
         if self.task_manager is None:
             print("Cannot refresh tasks: No TaskManager available")
@@ -176,12 +210,18 @@ class RightDrawer(MDNavigationDrawer):
         self.tasks_layout.clear_widgets()
 
         all_tasks = self.task_manager.get_all_tasks()
+        
+        # Sort tasks by priority (high to low)
+        # Don't use reverse=True because __lt__ already does reverse comparison
+        all_tasks.sort()  # Uses Task.__lt__ for sorting
+        
         # For each task in TaskManager, create a row
         for task in all_tasks:
             row = BoxLayout(orientation='horizontal', size_hint_y=None, height=dp(40))
 
-            # Show task name & status
-            label_text = f"{task.title} - {'Done' if task.completed else 'Pending'}"
+            # Show task name, priority & status
+            priority_label = task.get_priority_label()
+            label_text = f"{task.title} [{priority_label}] - {'Done' if task.completed else 'Pending'}"
             task_label = MDLabel(
                 text=label_text,
                 halign="left",
@@ -216,7 +256,7 @@ class RightDrawer(MDNavigationDrawer):
             
             row.add_widget(buttons_box)
             self.tasks_layout.add_widget(row)
-
+            
     def complete_task(self, task):
         """
         Mark the task as completed via TaskManager, then refresh.
