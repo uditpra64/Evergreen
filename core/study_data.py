@@ -23,6 +23,8 @@ class StudyData(EventDispatcher):
         }
         # Load existing data from JSON if available
         self.load_data()
+        
+        # Schedule the timer ONCE here
         Clock.schedule_interval(self.update_minutes, 60)
 
     def set_study_hours(self, date_str, hours):
@@ -35,11 +37,19 @@ class StudyData(EventDispatcher):
         self.dispatch("on_data_updated", self._data)
 
     def update_minutes(self, dt):
+        """
+        Called every minute to update the minutes counter.
+        Don't schedule another timer here - that causes multiple timers.
+        """
         self.current_minutes += 1
-        # In your StudyData class or similar:
-        Clock.schedule_interval(self.update_minutes, 60)
+        # REMOVED: Clock.schedule_interval(self.update_minutes, 60)
+
+    def reset_minutes(self):
+        """Reset the minutes counter"""
+        self.current_minutes = 0
 
     def get_current_minutes(self):
+        """Get the current minutes counter value"""
         return self.current_minutes
 
     def complete_task(self, task_id):
@@ -51,6 +61,7 @@ class StudyData(EventDispatcher):
         self.dispatch("on_data_updated", self._data)
 
     def get_data(self):
+        """Return the entire data dictionary"""
         return self._data
 
     def on_data_updated(self, updated_data):

@@ -18,12 +18,13 @@ from kivymd.uix.navigationdrawer import MDNavigationLayout
 from kivy.core.text import LabelBase
 from kivymd.uix.progressbar import MDProgressBar
 from kivy.uix.screenmanager import Screen, ScreenManager
+from kivy.metrics import dp
+from kivy.animation import Animation
 
 from cloud import Cloud
-from core.pomodoro import PomodoroWidget
+from core.pomodoro import PomodoroWidget, PomodoroState
 from core.right_drawer import RightDrawer
 from core.task_manager import TaskManager
-from core.achievement_manager import AchievementManager
 from core.tree_growth_observer import TreeGrowthObserver
 from core.study_data import StudyData
 from core.tree_growth_fsm import TreeGrowthFSM
@@ -140,32 +141,51 @@ class TreeScreen(MDScreen):
 
         self.task_manager = TaskManager()
         self.fsm = TreeGrowthFSM()
+        
+        # Set the study hours for FSM to distribute growth properly
+        self.total_study_hours = self.study_data.get_data()["total_hours"]
+        self.fsm.set_study_hours(self.total_study_hours)
+        
         self.tree_observer = TreeGrowthObserver(self.fsm)
 
         # Bind the FSM observer to data changes
         self.study_data.bind(on_data_updated=self.tree_observer.on_data_updated)
         self.task_manager.bind(on_data_updated=self.tree_observer.on_data_updated)
-        self.achievement_manager = AchievementManager(observer=self.tree_observer)
 
         # FloatLayout for main content
         self.layout = FloatLayout()
 
+        # Status label for current state
+        self.status_label = MDLabel(
+            text="Ready to start your session",
+            font_name="Munro",
+            halign="center",
+            size_hint=(0.8, None),
+            height=dp(30),
+            pos_hint={"center_x": 0.5, "top": 0.98}
+        )
+        self.layout.add_widget(self.status_label)
+
         # Progress Bar
         self.progress_bar = MDProgressBar(
             value=0,
-            max=2,
+            max=30,  # Set to default work_duration in minutes
             size_hint=(0.8, None),
-            height=20,
-            pos_hint={"center_x": 0.5, "top": 0.95}
+            height=dp(12),
+            pos_hint={"center_x": 0.5, "top": 0.95},
+            color=(0.2, 0.7, 0.2, 1)  # Green color
         )
         self.layout.add_widget(self.progress_bar)
+        
+        # Reset the minutes counter when screen initializes
+        self.study_data.reset_minutes()
 
         # Load stored study hours from StudyData
         self.total_study_hours = self.study_data.get_data()["total_hours"]
 
-        # Tree images
+        # Tree images - update to include all 11 images
         self.tree_folder = os.path.join(os.path.dirname(__file__), "..", "images", "tree_images")
-        self.image_paths = [os.path.join(self.tree_folder, f"{i}.png") for i in range(1, 6)]
+        self.image_paths = [os.path.join(self.tree_folder, f"{i}.png") for i in range(1, 12)]
         self.image_index = 0
         self.tree_image = Image(
             source=self.image_paths[self.image_index],
@@ -232,8 +252,8 @@ class TreeScreen(MDScreen):
         )
         self.add_widget(self.arrow_button)
 
-        # Update progress bar every minute
-        Clock.schedule_interval(self.update_progress_bar, 60)
+        # Update progress bar every second
+        Clock.schedule_interval(self.update_progress_bar, 1)
 
     def update_drawer_width(self, instance, width, height):
         self.right_drawer.width = width * 0.40
@@ -255,19 +275,86 @@ class TreeScreen(MDScreen):
         self.add_background_elements()
 
     def on_study_update(self, instance, data):
+        """When study data changes, update the tree and reset pomodoro"""
+        old_hours = self.total_study_hours
         self.total_study_hours = data["total_hours"]
+        
+        # Reset the FSM with new hours to adjust growth rate
+        self.fsm.set_study_hours(self.total_study_hours)
+        
+        # Only reset the timer if hours actually changed
+        if old_hours != self.total_study_hours:
+            # Reset the pomodoro timer with new hours
+            self.pomodoro_card.pomo_widget.reset_timer(self.total_study_hours)
+            # Start the timer
+            self.pomodoro_card.pomo_widget.start_timer()
+        
+        # Update tree growth
         self.update_tree_growth()
 
     def update_tree_growth(self):
-        self.image_index = self.fsm.get_current_stage()
-        self.tree_image.source = self.image_paths[self.image_index]
-        self.tree_image.reload()
+        """Update tree image and provide visual feedback"""
+        # Get current stage from FSM
+        current_stage = self.fsm.get_current_stage()
+        
+        # Make sure image_index is within valid range
+        if current_stage < 0:
+            current_stage = 0
+        elif current_stage >= len(self.image_paths):
+            current_stage = len(self.image_paths) - 1
+        
+        # Check if tree has grown
+        if current_stage != self.image_index:
+            # Tree has advanced to a new stage!
+            self.image_index = current_stage
+            
+            # Update image
+            self.tree_image.source = self.image_paths[self.image_index]
+            self.tree_image.reload()
+            
+            # Provide visual feedback with animation
+            # First slightly grow the tree
+            grow_anim = Animation(size=(self.tree_image.width * 1.2, self.tree_image.height * 1.2), 
+                                duration=0.3)
+            # Then return to normal size
+            grow_anim += Animation(size=(self.tree_image.width, self.tree_image.height), 
+                                 duration=0.3)
+            grow_anim.start(self.tree_image)
+            
+            # Show a notification
+            self.show_tree_growth_notification(f"Your tree has grown to stage {current_stage + 1}!")
+        
         print(f"Tree Growth Updated: {self.image_paths[self.image_index]} - based on observer events")
 
     def update_progress_bar(self, dt):
-        current_minutes = self.study_data.get_current_minutes()
-        self.progress_bar.value = current_minutes % 60
-        self.progress_bar.max = 60
+        """Update progress bar to match Pomodoro timer"""
+        # Get current block time left from Pomodoro
+        time_left = self.pomodoro_card.pomo_widget.current_block_time_left
+        total_time = 0
+        
+        # Check which block we're in
+        if self.pomodoro_card.pomo_widget.current_state == PomodoroState.WORK:
+            total_time = self.pomodoro_card.pomo_widget.work_duration
+            state_text = "Work"
+        elif self.pomodoro_card.pomo_widget.current_state == PomodoroState.BREAK:
+            total_time = self.pomodoro_card.pomo_widget.break_duration
+            state_text = "Break"
+        else:
+            state_text = "Done"
+            
+        # Set max to match current block total time
+        if total_time > 0:
+            self.progress_bar.max = total_time
+            
+            # Set value to time remaining (inverted for progress feel)
+            self.progress_bar.value = total_time - time_left
+        
+        # Update status label
+        if self.pomodoro_card.pomo_widget.current_state != PomodoroState.DONE:
+            laps_text = f"Lap {self.pomodoro_card.pomo_widget.laps_completed + 1}/{self.pomodoro_card.pomo_widget.total_laps}"
+            self.status_label.text = f"{state_text} Session - {laps_text}"
+        else:
+            self.status_label.text = "All sessions completed!"
 
     def show_reset_dialog(self, *args):
         self.dialog = MDDialog(
@@ -289,12 +376,22 @@ class TreeScreen(MDScreen):
         self.dialog.open()
 
     def reset_and_go_back(self):
-        # Instead of resetting to 1.0, reset to the actual hours or a new user input
+        """Reset timer and go back to study screen"""
         self.dialog.dismiss()
-        self.pomodoro_card.pomo_widget.start_timer()  # if you want to restart timer
+        # Stop the timer before navigating
+        self.pomodoro_card.pomo_widget.stop_timer()
+        # Completely reset pomodoro widget when navigating back
+        self.pomodoro_card.pomo_widget.reset_timer(self.total_study_hours)
+        # Don't restart timer - let the user enter new hours
         self.manager.current = "study_screen"
 
     def add_background_elements(self):
+        # Remove old elements first to avoid duplication
+        for child in list(self.layout.children):
+            if isinstance(child, Image) and (child.source.endswith('floor.png') or 
+                                          child.source.endswith('grass.png')):
+                self.layout.remove_widget(child)
+        
         base_image_path = os.path.join(os.path.dirname(__file__), "..", "images")
         floor_path = os.path.join(base_image_path, "floor.png")
         grass_path = os.path.join(base_image_path, "grass.png")
@@ -328,17 +425,73 @@ class TreeScreen(MDScreen):
             self.layout.add_widget(grass)
 
     def spawn_one_cloud_randomly(self, dt):
+        """Spawn a cloud with random size and speed"""
+        # Check if we have too many clouds already
+        cloud_count = sum(1 for child in self.layout.children if isinstance(child, Cloud))
+        
+        if cloud_count > 5:  # Limit total clouds to 5
+            # Still schedule next spawn, but don't create a new cloud
+            next_delay = random.uniform(5, 10)  # Longer delay between spawns
+            Clock.schedule_once(self.spawn_one_cloud_randomly, next_delay)
+            return
+        
         cloud_path = os.path.join(os.path.dirname(__file__), "..", "images", "cloud.png")
-        cloud = Cloud(source=cloud_path, speed=random.uniform(30, 80))
+        
+        # Use slower speed range
+        speed = random.uniform(5, 20)
+        
+        # Vary cloud size
+        size_factor = random.uniform(0.5, 1.5)
+        
+        # Create the cloud with random speed and size
+        cloud = Cloud(
+            source=cloud_path, 
+            speed=speed,
+            size_factor=size_factor
+        )
+        
+        # Position cloud off-screen to the left
         cloud.size_hint = (None, None)
-
-        top_band = 100
-        cloud.y = random.randint(Window.height - top_band, Window.height - 100)
+        
+        # Vary vertical position more
+        height_range = Window.height // 3
+        cloud.y = random.randint(Window.height - height_range, Window.height - 20)
         cloud.x = -cloud.width
-
+        
         self.layout.add_widget(cloud)
-        next_delay = random.uniform(2, 5)
+        
+        # Use longer delays between spawns
+        next_delay = random.uniform(5, 15)  # 5-15 seconds between clouds
         Clock.schedule_once(self.spawn_one_cloud_randomly, next_delay)
+
+    def show_tree_growth_notification(self, message):
+        """Show a temporary notification for tree growth"""
+        notification = MDLabel(
+            text=message,
+            halign="center",
+            font_name="Munro",
+            font_style="H6",
+            theme_text_color="Custom",
+            text_color=(0.1, 0.7, 0.1, 1),
+            size_hint=(None, None),
+            size=(400, 50),
+            pos_hint={"center_x": 0.5, "top": 0.9},
+            opacity=0
+        )
+        
+        self.layout.add_widget(notification)
+        
+        # Fade in, stay, fade out
+        anim = Animation(opacity=1, duration=0.5) + \
+               Animation(opacity=1, duration=2.0) + \
+               Animation(opacity=0, duration=0.5)
+        
+        # Remove notification when animation completes
+        def remove_notification(anim, widget):
+            self.layout.remove_widget(widget)
+        
+        anim.bind(on_complete=remove_notification)
+        anim.start(notification)
 
     def reset_pomodoro_and_tree(self, new_hours):
         # If you want a custom reset, e.g., re-init with new_hours
