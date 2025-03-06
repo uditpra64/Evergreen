@@ -1,7 +1,8 @@
 {
     "study_hours": {
-        "2025-03-06": 0.5
+        "2025-03-06": 0.5,
+        "2025-03-07": 1.0
     },
     "tasks_completed": {},
-    "total_hours": 0.5
+    "total_hours": 1.5
 }

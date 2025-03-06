@@ -39,36 +39,64 @@ class PomodoroCard(MDCard):
     def __init__(self, study_hours, **kwargs):
         super().__init__(**kwargs)
 
-        # Smaller fixed size
+        # Fixed size and position
         self.size_hint = (None, None)
-        self.size = (300, 140)
-        # Position higher up on the left
+        self.size = (300, 180)  # Increased height to fit all content
         self.pos_hint = {"center_x": 0.2, "top": 0.7}
+        self.padding = [15, 15, 15, 15]  # Add padding to prevent content overflow
 
+        # Rounded corners and colors
         self.work_color = (204/255, 84/255, 84/255, 1)  # 25-min block color
         self.break_color = (173/255, 223/255, 255/255, 1)  # 5-min break color
         self.radius = [20, 20, 20, 20]
-
-        # Title label with smaller font & wide text_size
+        self.md_bg_color = self.work_color
+        
+        # Create main vertical layout
+        main_layout = MDBoxLayout(
+            orientation="vertical",
+            spacing=dp(10),
+            size_hint=(1, 1)
+        )
+        
+        # Title label at TOP
         self.title_label = Label(
             text="Pomodoro Timer",
             font_name="Munro",
             halign="center",
             font_size="20sp",
-            size_hint=(1, 0.3),
-            text_size=(self.width - 10, None)
+            size_hint=(1, 0.2),
+            color=(1, 1, 1, 1)  # White text
         )
-        self.add_widget(self.title_label)
+        main_layout.add_widget(self.title_label)
 
-        # Timer layout
+        # Timer display
         self.timer_layout = MDBoxLayout(
             orientation="horizontal",
-            size_hint=(1, 0.7),
-            spacing=2,
-            padding=(5, 2),
-            pos_hint={"center_x": 0.5, "center_y": 0.5}
+            spacing=dp(2),
+            size_hint=(1, 0.6),
+            pos_hint={"center_x": 0.5}
         )
-        self.add_widget(self.timer_layout)
+        main_layout.add_widget(self.timer_layout)
+
+        # Sessions left indicator
+        self.sessions_layout = MDBoxLayout(
+            orientation="horizontal",
+            size_hint=(1, 0.2),
+            pos_hint={"center_x": 0.5}
+        )
+        
+        self.sessions_label = Label(
+            text="Sessions left: 0",
+            font_name="Munro",
+            halign="center",
+            font_size="16sp",
+            color=(1, 1, 1, 1)  # White text
+        )
+        self.sessions_layout.add_widget(self.sessions_label)
+        main_layout.add_widget(self.sessions_layout)
+
+        # Add the main layout to the card
+        self.add_widget(main_layout)
 
         # Create the Pomodoro widget
         self.pomo_widget = PomodoroWidget(
@@ -76,10 +104,6 @@ class PomodoroCard(MDCard):
             update_callback=self.update_timer_display
         )
         self.pomo_widget.size_hint = (1, 1)
-        self.timer_layout.add_widget(self.pomo_widget)
-
-        # Default to work color
-        self.md_bg_color = self.work_color
 
     def update_timer_display(self, time_str, block_type, laps_remaining):
         # Clear old display
@@ -90,9 +114,18 @@ class PomodoroCard(MDCard):
             done_label = MDLabel(
                 text="Session Complete!",
                 halign="center",
-                font_style="H6"
+                font_style="H6",
+                theme_text_color="Custom",
+                text_color=(1, 1, 1, 1)  # White text
             )
             self.timer_layout.add_widget(done_label)
+            self.sessions_label.text = "All sessions completed!"
+            
+            # Notify parent screen (TreeScreen) that Pomodoro is done
+            if hasattr(self, 'parent') and self.parent:
+                parent_screen = self.get_parent_screen()
+                if parent_screen and hasattr(parent_screen, 'show_completion_popup'):
+                    parent_screen.show_completion_popup()
             return
 
         # Decide background color
@@ -110,27 +143,31 @@ class PomodoroCard(MDCard):
                 size_hint=(None, None),
                 size=(36, 48),
                 md_bg_color=(0.98, 0.98, 0.98, 1),
-                pos_hint={"center_x": 0.5, "center_y": 0.5}
+                pos_hint={"center_y": 0.5}
             )
             digit_label = MDLabel(
                 text=ch,
                 halign="center",
                 font_style="H5",
                 font_size="20sp",
+                theme_text_color="Custom",
+                text_color=(0.1, 0.1, 0.1, 1),  # Dark text on light background
                 size_hint=(1, 1)
             )
             digit_container.add_widget(digit_label)
             self.timer_layout.add_widget(digit_container)
 
-        # Lap count label
-        lap_label = MDLabel(
-            text=f"Sessions left: {laps_remaining}",
-            halign="center",
-            font_style="Subtitle2",
-            size_hint=(None, None),
-            size=(100, 30)
-        )
-        self.timer_layout.add_widget(lap_label)
+        # Fix for laps display - display actual remaining laps without +1
+        self.sessions_label.text = f"Sessions left: {laps_remaining}"
+    
+    def get_parent_screen(self):
+        """Find the parent TreeScreen"""
+        current = self.parent
+        while current:
+            if isinstance(current, TreeScreen):
+                return current
+            current = current.parent
+        return None
 
 
 class TreeScreen(MDScreen):
@@ -142,15 +179,19 @@ class TreeScreen(MDScreen):
         self.task_manager = TaskManager()
         self.fsm = TreeGrowthFSM()
         
-        # Set the study hours for FSM to distribute growth properly
+        # Set the study hours for time-based tree growth
         self.total_study_hours = self.study_data.get_data()["total_hours"]
-        self.fsm.set_study_hours(self.total_study_hours)
+        self.total_minutes = self.total_study_hours * 60
+        self.tree_stages = 11  # Total number of tree images
+        
+        # Calculate minutes per stage
+        self.minutes_per_stage = max(self.total_minutes / self.tree_stages, 1)
+        print(f"Time-based growth: {self.minutes_per_stage:.1f} minutes per stage")
+        
+        # Track elapsed minutes
+        self.elapsed_minutes = 0
         
         self.tree_observer = TreeGrowthObserver(self.fsm)
-
-        # Bind the FSM observer to data changes
-        self.study_data.bind(on_data_updated=self.tree_observer.on_data_updated)
-        self.task_manager.bind(on_data_updated=self.tree_observer.on_data_updated)
 
         # FloatLayout for main content
         self.layout = FloatLayout()
@@ -187,14 +228,18 @@ class TreeScreen(MDScreen):
         self.tree_folder = os.path.join(os.path.dirname(__file__), "..", "images", "tree_images")
         self.image_paths = [os.path.join(self.tree_folder, f"{i}.png") for i in range(1, 12)]
         self.image_index = 0
+
+        # Create the tree image - DON'T set pos_hint
         self.tree_image = Image(
             source=self.image_paths[self.image_index],
             size_hint=(None, None),
-            size=(300, 400),
-            pos_hint={"center_x": 0.5, "center_y": 0.4}
+            size=(300, 400)
         )
         self.layout.add_widget(self.tree_image)
-        self.update_tree_growth()
+        # Position will be set in reposition_tree
+        
+        # Update tree growth initially
+        self.update_tree_image()
 
         # Back button
         self.back_button = MDRaisedButton(
@@ -211,8 +256,7 @@ class TreeScreen(MDScreen):
         # Create PomodoroCard using the actual total_study_hours
         self.pomodoro_card = PomodoroCard(self.total_study_hours)
         self.layout.add_widget(self.pomodoro_card)
-        # Start the Pomodoro timer
-        self.pomodoro_card.pomo_widget.start_timer()
+        # Timer will start in on_enter
 
         # Clouds
         Clock.schedule_once(self.spawn_one_cloud_randomly, 2)
@@ -254,6 +298,29 @@ class TreeScreen(MDScreen):
 
         # Update progress bar every second
         Clock.schedule_interval(self.update_progress_bar, 1)
+        
+        # Schedule tree growth check every minute
+        Clock.schedule_interval(self.check_tree_growth, 60)
+        
+        # Position the tree after layout is complete
+        Clock.schedule_once(lambda dt: self.reposition_tree(), 0)
+        
+        # Store the completion popup so we only show it once
+        self.completion_popup_shown = False
+    
+    def on_enter(self):
+        """Called when the screen is entered (becomes active)"""
+        # Start the Pomodoro timer when screen is actually displayed
+        if not self.pomodoro_card.pomo_widget.timer_running:
+            self.pomodoro_card.pomo_widget.reset_timer(self.total_study_hours)
+            self.pomodoro_card.pomo_widget.start_timer()
+            print("Timer started on screen entry")
+            
+        # Reset the completion popup flag
+        self.completion_popup_shown = False
+            
+        # Make sure tree is properly positioned
+        self.reposition_tree()
 
     def update_drawer_width(self, instance, width, height):
         self.right_drawer.width = width * 0.40
@@ -263,11 +330,24 @@ class TreeScreen(MDScreen):
         self.right_drawer.update_triangle()
 
     def reposition_tree(self, instance=None, value=None):
-        # Place the tree to the right of the Pomodoro card
-        self.tree_image.pos = (
-            self.pomodoro_card.x + self.pomodoro_card.width + 100,
-            self.pomodoro_card.y
-        )
+        """Position the tree at the center of the screen over the ground"""
+        # Get base dimensions for positioning
+        floor_height = 96  # Height of floor.png
+        grass_height = 64  # Height of grass.png
+        
+        # Calculate ground level (top of grass)
+        ground_level = floor_height + grass_height
+        
+        # Always center the tree horizontally
+        window_center = Window.width // 2
+        tree_x = window_center - (self.tree_image.width // 2)
+        
+        # Calculate the y position to plant the tree in the ground
+        tree_y = ground_level - 40
+        
+        # Set the tree position absolutely
+        self.tree_image.pos = (tree_x, tree_y)
+        print(f"Tree positioned at ({tree_x}, {tree_y})")
 
     def _update_bg(self, *args):
         self.bg_rect.pos = self.layout.pos
@@ -278,9 +358,14 @@ class TreeScreen(MDScreen):
         """When study data changes, update the tree and reset pomodoro"""
         old_hours = self.total_study_hours
         self.total_study_hours = data["total_hours"]
+        self.total_minutes = self.total_study_hours * 60
         
-        # Reset the FSM with new hours to adjust growth rate
-        self.fsm.set_study_hours(self.total_study_hours)
+        # Recalculate minutes per stage with new hours
+        self.minutes_per_stage = max(self.total_minutes / self.tree_stages, 1)
+        print(f"Updated time-based growth: {self.minutes_per_stage:.1f} minutes per stage")
+        
+        # Reset elapsed minutes
+        self.elapsed_minutes = 0
         
         # Only reset the timer if hours actually changed
         if old_hours != self.total_study_hours:
@@ -289,42 +374,64 @@ class TreeScreen(MDScreen):
             # Start the timer
             self.pomodoro_card.pomo_widget.start_timer()
         
-        # Update tree growth
-        self.update_tree_growth()
+        # Reset tree to first stage
+        self.image_index = 0
+        self.update_tree_image()
+        
+        # Reset the completion popup flag
+        self.completion_popup_shown = False
 
-    def update_tree_growth(self):
-        """Update tree image and provide visual feedback"""
-        # Get current stage from FSM
-        current_stage = self.fsm.get_current_stage()
+    def check_tree_growth(self, dt):
+        """Check if it's time to grow the tree (called every minute)"""
+        # Increment elapsed minutes
+        self.elapsed_minutes += 1
         
-        # Make sure image_index is within valid range
-        if current_stage < 0:
-            current_stage = 0
-        elif current_stage >= len(self.image_paths):
-            current_stage = len(self.image_paths) - 1
+        # Calculate which stage we should be at based on elapsed minutes
+        if self.minutes_per_stage > 0:
+            new_stage = min(int(self.elapsed_minutes / self.minutes_per_stage), self.tree_stages - 1)
+            
+            # If we need to advance to a new stage
+            if new_stage > self.image_index:
+                self.image_index = new_stage
+                print(f"Tree growing to stage {new_stage+1} after {self.elapsed_minutes} minutes")
+                self.update_tree_image(animate=True)
+
+    def update_tree_image(self, animate=False):
+        """Update the tree image and optionally animate the growth"""
+        # Ensure image_index is within bounds
+        if self.image_index < 0:
+            self.image_index = 0
+        elif self.image_index >= len(self.image_paths):
+            self.image_index = len(self.image_paths) - 1
+            
+        # Update image
+        self.tree_image.source = self.image_paths[self.image_index]
+        self.tree_image.reload()
         
-        # Check if tree has grown
-        if current_stage != self.image_index:
-            # Tree has advanced to a new stage!
-            self.image_index = current_stage
+        # If animation requested
+        if animate:
+            # Remember the original size so we can animate correctly
+            orig_size = self.tree_image.size
+            orig_pos = self.tree_image.pos
             
-            # Update image
-            self.tree_image.source = self.image_paths[self.image_index]
-            self.tree_image.reload()
-            
-            # Provide visual feedback with animation
             # First slightly grow the tree
-            grow_anim = Animation(size=(self.tree_image.width * 1.2, self.tree_image.height * 1.2), 
+            grow_anim = Animation(size=(orig_size[0] * 1.2, orig_size[1] * 1.2), 
                                 duration=0.3)
             # Then return to normal size
-            grow_anim += Animation(size=(self.tree_image.width, self.tree_image.height), 
+            grow_anim += Animation(size=orig_size, 
                                  duration=0.3)
             grow_anim.start(self.tree_image)
             
             # Show a notification
-            self.show_tree_growth_notification(f"Your tree has grown to stage {current_stage + 1}!")
+            self.show_tree_growth_notification(f"Your tree has grown to stage {self.image_index + 1}!")
+            
+            # Make sure tree stays in position after animation
+            Clock.schedule_once(lambda dt: self.reposition_tree(), 0.7)
         
-        print(f"Tree Growth Updated: {self.image_paths[self.image_index]} - based on observer events")
+        print(f"Tree image updated: {self.image_paths[self.image_index]}")
+        
+        # Make sure tree is properly positioned
+        self.reposition_tree()
 
     def update_progress_bar(self, dt):
         """Update progress bar to match Pomodoro timer"""
@@ -380,8 +487,6 @@ class TreeScreen(MDScreen):
         self.dialog.dismiss()
         # Stop the timer before navigating
         self.pomodoro_card.pomo_widget.stop_timer()
-        # Completely reset pomodoro widget when navigating back
-        self.pomodoro_card.pomo_widget.reset_timer(self.total_study_hours)
         # Don't restart timer - let the user enter new hours
         self.manager.current = "study_screen"
 
@@ -402,8 +507,6 @@ class TreeScreen(MDScreen):
         for i in range(num_floor):
             floor = Image(
                 source=floor_path,
-                allow_stretch=False,
-                keep_ratio=True,
                 size_hint=(None, None),
                 size=(floor_width, floor_height),
                 pos=(i * floor_width, 0)
@@ -417,8 +520,6 @@ class TreeScreen(MDScreen):
             grass = Image(
                 source=grass_path,
                 size_hint=(None, None),
-                allow_stretch=False,
-                keep_ratio=True,
                 size=(grass_width, grass_height),
                 pos=(i * grass_width, floor_height)
             )
@@ -438,7 +539,7 @@ class TreeScreen(MDScreen):
         cloud_path = os.path.join(os.path.dirname(__file__), "..", "images", "cloud.png")
         
         # Use slower speed range
-        speed = random.uniform(5, 20)
+        speed = random.uniform(15, 35)
         
         # Vary cloud size
         size_factor = random.uniform(0.5, 1.5)
@@ -492,6 +593,24 @@ class TreeScreen(MDScreen):
         
         anim.bind(on_complete=remove_notification)
         anim.start(notification)
+
+    def show_completion_popup(self):
+        """Show a congratulations popup when study session is complete"""
+        if not self.completion_popup_shown:
+            self.completion_popup_shown = True
+            
+            dialog = MDDialog(
+                title="Congratulations!",
+                text="You have completed your study session! Great work!",
+                buttons=[
+                    MDFlatButton(
+                        text="THANKS!",
+                        font_name="Munro",
+                        on_release=lambda x: dialog.dismiss()
+                    )
+                ]
+            )
+            dialog.open()
 
     def reset_pomodoro_and_tree(self, new_hours):
         # If you want a custom reset, e.g., re-init with new_hours

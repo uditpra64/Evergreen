@@ -18,6 +18,8 @@ from kivy.core.window import Window
 from kivy.core.image import Image as CoreImage
 from kivy.uix.floatlayout import FloatLayout
 from kivy.uix.anchorlayout import AnchorLayout
+from kivymd.uix.dialog import MDDialog
+from kivymd.uix.button import MDFlatButton
 
 # Load the image and set the window size to the image's size
 img = CoreImage("images/home_screen.png")
@@ -25,10 +27,7 @@ Window.size = img.texture.size  # Set the window size to match the image dimensi
 
 LabelBase.register(name="Munro", fn_regular="font/Munro.ttf")
 
-#show hours studied in the week 
-
 class StudyScreen(MDScreen):
-
     def __init__(self, study_data: StudyData, **kwargs):
         super().__init__(**kwargs)
         self.study_data = study_data
@@ -59,14 +58,15 @@ class StudyScreen(MDScreen):
             height=dp(300)   # Adjust as desired
         )
         anchor_layout.add_widget(self.interactive_layout)
-
+        
+        # Title label with white text for better visibility
         self.label = Label(
-            text="Please enter the number of hours you wish to study to proceed...",
+            text="Please enter the number of hours you wish to study (minimum 0.5)...",
             font_name="Munro",
             font_size="28sp",
             halign="center",
             bold=True, 
-            color=(1, 0, 0, 1), 
+            color=(1, 1, 1, 1),  # Changed to WHITE text
             size_hint=(1, None),
             width=dp(380),
             height=dp(60)
@@ -84,15 +84,16 @@ class StudyScreen(MDScreen):
 
         # 5) White text box with black border
         self.input_field = MDTextField(
-            hint_text="Enter hours",
+            hint_text="Enter hours (0.5 or more)",
             size_hint=(None, None),
             width=dp(300),
             height=dp(60),
             mode="rectangle",  
-            line_color_focus=(1, 1, 1, 1),  # Black border when active
-            line_color_normal=(1, 1, 1, 1),  # Black border when inactive
-            foreground_color=(1, 1, 1, 1),  # Black text color
-            background_color=(1, 1, 1, 1), # White background
+            line_color_focus=(1, 1, 1, 1),  # White border when active
+            line_color_normal=(1, 1, 1, 1),  # White border when inactive
+            foreground_color=(1, 1, 1, 1),  # White text color
+            background_color=(0.2, 0.2, 0.2, 0.3),  # Darker semi-transparent background
+            hint_text_color=(1, 1, 1, 0.7),  # White hint text with slight transparency
             font_size="30sp",
             font_name="Munro",
         )
@@ -119,6 +120,19 @@ class StudyScreen(MDScreen):
             opacity=0  
         )
         self.interactive_layout.add_widget(self.confirmation_label)
+        
+        # Back button to return to home screen
+        self.back_button = MDRaisedButton(
+            text="Back",
+            font_name="Munro",
+            size_hint=(None, None),
+            width=150,
+            height=60, 
+            font_size="20sp",
+            pos_hint={"right": 0.95, "top": 0.95},
+            on_release=self.go_back
+        )
+        self.add_widget(self.back_button)
 
     def update_rect(self, *args):
         """Keep the background rectangle size in sync with the screen."""
@@ -128,14 +142,20 @@ class StudyScreen(MDScreen):
     def on_submit(self, instance):
         hours_text = self.input_field.text.strip()
         if not hours_text:
-            self.show_feedback("Please enter a valid number.", font_name="Munro", color=(1,0,0,1))  # Red error
+            self.show_validation_dialog("Please enter a valid number.")
             return
         
         # Convert to float
         try:
             hours = float(hours_text)
+            
+            # Enforce minimum 0.5 hours (30 minutes)
+            if hours < 0.5:
+                self.show_validation_dialog("Minimum study time is 0.5 hours (30 minutes).")
+                return
+                
         except ValueError:
-            self.show_feedback("Invalid number!", font_name="Munro", color=(1,0,0,1))
+            self.show_validation_dialog("Invalid number!")
             return
         
         # If valid, store in StudyData (nested dictionary) with today's date
@@ -144,22 +164,44 @@ class StudyScreen(MDScreen):
 
         # Determine the correct wording for "hour" vs. "hours"
         hour_label_text = "hour" if hours == 1 else "hours"
-        self.show_feedback(hours, hour_label_text)
-
-        # Possibly navigate to next screen or show success message
-        self.show_feedback(f"Recorded {hours} hour(s).", color=(0,1,0,1))
+        
+        # Calculate expected Pomodoro sessions
+        pomodoro_sessions = int(hours * 60 / 30)  # 30 min per Pomodoro cycle
+        
+        # Show success message
+        self.show_feedback(f"Great! You've set {hours} {hour_label_text} with {pomodoro_sessions} Pomodoro sessions.", color=(0,1,0,1))
 
         # Switch to tree screen after a short delay (e.g., 1 second)
-        Clock.schedule_once(lambda dt: self.switch_to_tree_screen(), 1)
+        Clock.schedule_once(lambda dt: self.switch_to_tree_screen(), 2)
 
     def switch_to_tree_screen(self):
         if self.manager:
             self.manager.current = "tree_screen"
+            
+    def go_back(self, instance):
+        """Return to home screen"""
+        if self.manager:
+            self.manager.current = "home_screen"
 
     def show_feedback(self, msg, color=(1,1,1,1)):
         """Display a message in confirmation_label with fade-in animation."""
-        self.confirmation_label.text = ""
-        self.confirmation_label.text_color = [1, 0, 0, 1]
+        self.confirmation_label.text = msg
+        self.confirmation_label.text_color = color
         self.confirmation_label.opacity = 0
         anim = Animation(opacity=1, duration=0.5)
         anim.start(self.confirmation_label)
+        
+    def show_validation_dialog(self, message):
+        """Show a validation error as a popup dialog"""
+        dialog = MDDialog(
+            title="Input Error",
+            text=message,
+            buttons=[
+                MDFlatButton(
+                    text="OK",
+                    font_name="Munro",
+                    on_release=lambda x: dialog.dismiss()
+                )
+            ]
+        )
+        dialog.open()
