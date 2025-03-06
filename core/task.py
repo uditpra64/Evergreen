@@ -1,25 +1,34 @@
 class Task:
     """
-    A simple data class for tasks with priority.
-    Priority 1 = lowest priority, higher numbers = higher priority
-    or vice versa, as you prefer.
+    Task with priority levels: low, medium, high
     """
+    PRIORITY_LOW = 1
+    PRIORITY_MEDIUM = 2
+    PRIORITY_HIGH = 3
+    
+    PRIORITY_LABELS = {
+        PRIORITY_LOW: "Low",
+        PRIORITY_MEDIUM: "Medium",
+        PRIORITY_HIGH: "High"
+    }
 
-    def __init__(self, title, priority=1):
+    def __init__(self, title, priority=PRIORITY_MEDIUM):
         self.title = title
-        self.priority = priority  # optional, 1 = low, 5 = high
+        self.priority = priority  # 1=low, 2=medium, 3=high
         self.completed = False
 
     def __lt__(self, other):
         """
-            Required for heapq to compare tasks.
-            By default, lower priority means 'less than' => pops first.
-            If you want highest priority first, invert the comparison.
+        Compare tasks by priority (higher priority first)
         """
-        return self.priority < other.priority
+        # Reverse comparison so higher priority comes first
+        return self.priority > other.priority
 
     def complete(self):
         self.completed = True
+        
+    def get_priority_label(self):
+        return self.PRIORITY_LABELS.get(self.priority, "Medium")
 
     def __repr__(self):
-        return f"Task(title='{self.title}', priority={self.priority}, completed={self.completed})"
+        return f"Task(title='{self.title}', priority={self.get_priority_label()}, completed={self.completed})"

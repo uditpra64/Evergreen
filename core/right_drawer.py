@@ -1,9 +1,8 @@
 from kivymd.uix.label import MDLabel
 from kivymd.uix.navigationdrawer import MDNavigationDrawer
 from kivymd.uix.boxlayout import MDBoxLayout
-from kivymd.uix.button import MDIconButton
+from kivymd.uix.button import MDIconButton, MDFlatButton
 from kivy.metrics import dp
-# Fix the import - import the class, not the module
 from core.task_manager import TaskManager, Task
 from kivy.uix.textinput import TextInput
 from kivy.uix.scrollview import ScrollView
@@ -12,7 +11,7 @@ from core.subject import Subject
 from kivy.properties import ObjectProperty
 from kivy.core.text import LabelBase
 from kivy.uix.button import Button
-
+from kivymd.uix.dialog import MDDialog
 
 LabelBase.register(name="Munro", fn_regular="font/Munro.ttf")
 
@@ -56,14 +55,34 @@ class RightDrawer(MDNavigationDrawer):
         )
         layout.add_widget(self.task_input)
 
+        # Buttons row
+        buttons_row = BoxLayout(
+            orientation='horizontal',
+            size_hint_y=None,
+            height=dp(40),
+            spacing=dp(10)
+        )
+        
         # Button to add tasks
         add_task_btn = Button(
             text="Add Task",
-            size_hint_y=None,
+            size_hint_x=0.7,
             height=dp(40)
         )
         add_task_btn.bind(on_release=self.add_task)
-        layout.add_widget(add_task_btn)
+        buttons_row.add_widget(add_task_btn)
+        
+        # Button to clear all tasks
+        clear_tasks_btn = Button(
+            text="Clear All",
+            size_hint_x=0.3,
+            height=dp(40),
+            background_color=(0.8, 0.2, 0.2, 1)  # Red background
+        )
+        clear_tasks_btn.bind(on_release=self.confirm_clear_tasks)
+        buttons_row.add_widget(clear_tasks_btn)
+        
+        layout.add_widget(buttons_row)
         
         # Scrollable area to display tasks
         self.scroll_view = ScrollView(size_hint=(1, 1))
@@ -110,9 +129,40 @@ class RightDrawer(MDNavigationDrawer):
             
         title = self.task_input.text.strip()
         if title:
-            # If you have a Task class:
-            self.task_manager.add_task(title, priority=1)
+            # Add task without priority
+            self.task_manager.add_task(title)
             self.task_input.text = ""
+            self.refresh_task_list()
+
+    def confirm_clear_tasks(self, *args):
+        """Show confirmation dialog before clearing all tasks"""
+        if self.task_manager is None or not self.task_manager.tasks:
+            return
+            
+        dialog = MDDialog(
+            title="Clear All Tasks?",
+            text="Are you sure you want to delete all tasks? This cannot be undone.",
+            buttons=[
+                MDFlatButton(
+                    text="CANCEL",
+                    font_name="Munro",
+                    on_release=lambda x: dialog.dismiss()
+                ),
+                MDFlatButton(
+                    text="CLEAR ALL",
+                    font_name="Munro",
+                    text_color=(0.8, 0.2, 0.2, 1),  # Red text for warning
+                    on_release=lambda x: self.clear_all_tasks(dialog)
+                )
+            ]
+        )
+        dialog.open()
+        
+    def clear_all_tasks(self, dialog):
+        """Clear all tasks and dismiss dialog"""
+        dialog.dismiss()
+        if self.task_manager:
+            self.task_manager.reset_all_tasks()
             self.refresh_task_list()
 
     def refresh_task_list(self):
@@ -127,27 +177,44 @@ class RightDrawer(MDNavigationDrawer):
 
         all_tasks = self.task_manager.get_all_tasks()
         # For each task in TaskManager, create a row
-        for i, task in enumerate(all_tasks):
+        for task in all_tasks:
             row = BoxLayout(orientation='horizontal', size_hint_y=None, height=dp(40))
 
-             # Show task name & status
+            # Show task name & status
             label_text = f"{task.title} - {'Done' if task.completed else 'Pending'}"
             task_label = MDLabel(
                 text=label_text,
                 halign="left",
-                size_hint_x=0.8
+                size_hint_x=0.6
             )
             row.add_widget(task_label)
 
+            # Buttons container
+            buttons_box = BoxLayout(
+                orientation='horizontal',
+                size_hint_x=0.4,
+                spacing=dp(5)
+            )
+            
             # Button to complete the task
             complete_btn = Button(
                 text="Complete",
-                size_hint_x=0.2,
+                size_hint_x=0.6,
                 disabled=task.completed
             )
             complete_btn.bind(on_release=lambda btn, t=task: self.complete_task(t))
-            row.add_widget(complete_btn)
-
+            buttons_box.add_widget(complete_btn)
+            
+            # Button to delete the task
+            delete_btn = Button(
+                text="Delete",
+                size_hint_x=0.4,
+                background_color=(0.8, 0.2, 0.2, 1)  # Red background
+            )
+            delete_btn.bind(on_release=lambda btn, t=task: self.delete_task(t))
+            buttons_box.add_widget(delete_btn)
+            
+            row.add_widget(buttons_box)
             self.tasks_layout.add_widget(row)
 
     def complete_task(self, task):
@@ -158,6 +225,16 @@ class RightDrawer(MDNavigationDrawer):
             return
             
         self.task_manager.complete_task(task)
+        self.refresh_task_list()
+        
+    def delete_task(self, task):
+        """
+        Delete the task via TaskManager, then refresh.
+        """
+        if self.task_manager is None:
+            return
+            
+        self.task_manager.delete_task(task)
         self.refresh_task_list()
 
     def toggle_drawer(self, *args):

@@ -308,6 +308,47 @@ class TreeScreen(MDScreen):
         # Store the completion popup so we only show it once
         self.completion_popup_shown = False
     
+
+    def spawn_one_cloud_randomly(self, dt):
+        """Spawn a cloud with random size and speed"""
+        # Check if we have too many clouds already
+        cloud_count = sum(1 for child in self.layout.children if isinstance(child, Cloud))
+        
+        if cloud_count > 5:  # Limit total clouds to 5
+            # Still schedule next spawn, but don't create a new cloud
+            next_delay = random.uniform(5, 10)  # Longer delay between spawns
+            Clock.schedule_once(self.spawn_one_cloud_randomly, next_delay)
+            return
+        
+        cloud_path = os.path.join(os.path.dirname(__file__), "..", "images", "cloud.png")
+        
+        # Use slower speed range
+        speed = random.uniform(15, 35)
+        
+        # Vary cloud size
+        size_factor = random.uniform(0.5, 1.5)
+        
+        # Create the cloud with random speed and size
+        cloud = Cloud(
+            source=cloud_path, 
+            speed=speed,
+            size_factor=size_factor
+        )
+        
+        # Position cloud off-screen to the left
+        cloud.size_hint = (None, None)
+        
+        # Vary vertical position more
+        height_range = Window.height // 3
+        cloud.y = random.randint(Window.height - height_range, Window.height - 20)
+        cloud.x = -cloud.width
+        
+        self.layout.add_widget(cloud)
+        
+        # Use longer delays between spawns
+        next_delay = random.uniform(5, 15)  # 5-15 seconds between clouds
+        Clock.schedule_once(self.spawn_one_cloud_randomly, next_delay)
+
     def on_enter(self):
         """Called when the screen is entered (becomes active)"""
         # Start the Pomodoro timer when screen is actually displayed
@@ -482,14 +523,30 @@ class TreeScreen(MDScreen):
         )
         self.dialog.open()
 
-    def reset_and_go_back(self):
-        """Reset timer and go back to study screen"""
-        self.dialog.dismiss()
-        # Stop the timer before navigating
-        self.pomodoro_card.pomo_widget.stop_timer()
-        # Don't restart timer - let the user enter new hours
-        self.manager.current = "study_screen"
+    # Updated reset_and_go_back method for TreeScreen class
 
+    def reset_and_go_back(self):
+        """Reset timer, tasks, and go back to study screen"""
+        self.dialog.dismiss()
+        
+        # Stop the timer
+        self.pomodoro_card.pomo_widget.stop_timer()
+        
+        # Reset task manager
+        if self.task_manager:
+            self.task_manager.reset_all_tasks()
+        
+        # Reset elapsed minutes and tree growth
+        self.elapsed_minutes = 0
+        self.image_index = 0
+        self.update_tree_image()
+        
+        # Reset completion popup flag
+        self.completion_popup_shown = False
+        
+        # Go back to study screen
+        self.manager.current = "study_screen"
+        
     def add_background_elements(self):
         # Remove old elements first to avoid duplication
         for child in list(self.layout.children):
