@@ -1,13 +1,13 @@
-from kivymd.uix.label import MDLabel  # Use MDLabel from KivyMD
+from kivymd.uix.label import MDLabel
 from kivymd.uix.navigationdrawer import MDNavigationDrawer
 from kivymd.uix.boxlayout import MDBoxLayout
 from kivymd.uix.button import MDIconButton
 from kivy.metrics import dp
-from core import task_manager
+# Fix the import - import the class, not the module
+from core.task_manager import TaskManager, Task
 from kivy.uix.textinput import TextInput
 from kivy.uix.scrollview import ScrollView
 from kivy.uix.boxlayout import BoxLayout
-from core.task_manager import TaskManager, Task 
 from core.subject import Subject  
 from kivy.properties import ObjectProperty
 from kivy.core.text import LabelBase
@@ -19,14 +19,18 @@ LabelBase.register(name="TimesNewRoman", fn_regular="font/times.ttf")
 class RightDrawer(MDNavigationDrawer):
     task_manager = ObjectProperty(None)
 
-    def __init__(self, **kwargs):
+    def __init__(self, task_manager=None, **kwargs):
         super().__init__(**kwargs)
         self.anchor = "right"
         self.md_bg_color = (1.0, 0.925, 0.611, 1)
 
-        # The TaskManager instance that actually stores tasks
-        #self.task_manager = task_manager
+        # Store the TaskManager instance
+        self.task_manager = task_manager
 
+        # Only proceed with task-related setup if we have a task manager
+        if self.task_manager is None:
+            print("Warning: RightDrawer initialized without a TaskManager")
+            
         layout = MDBoxLayout(
             orientation="vertical",
             padding="10dp",
@@ -91,14 +95,19 @@ class RightDrawer(MDNavigationDrawer):
         # Bind so the triangle moves with the drawer
         self.bind(pos=self.update_triangle)
 
-        # Finally, load existing tasks from the TaskManager
-        self.refresh_task_list()
+        # Finally, load existing tasks from the TaskManager, if available
+        if self.task_manager is not None:
+            self.refresh_task_list()
 
     def add_task(self, *args):
         """
         Create a new Task and add it to the TaskManager.
         Then refresh the UI to show the new task.
         """
+        if self.task_manager is None:
+            print("Cannot add task: No TaskManager available")
+            return
+            
         title = self.task_input.text.strip()
         if title:
             # If you have a Task class:
@@ -110,6 +119,10 @@ class RightDrawer(MDNavigationDrawer):
         """
         Clears the tasks_layout and rebuilds it with the latest tasks.
         """
+        if self.task_manager is None:
+            print("Cannot refresh tasks: No TaskManager available")
+            return
+            
         self.tasks_layout.clear_widgets()
 
         all_tasks = self.task_manager.get_all_tasks()
@@ -141,6 +154,9 @@ class RightDrawer(MDNavigationDrawer):
         """
         Mark the task as completed via TaskManager, then refresh.
         """
+        if self.task_manager is None:
+            return
+            
         self.task_manager.complete_task(task)
         self.refresh_task_list()
 

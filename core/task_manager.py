@@ -145,13 +145,3 @@ class TaskManager(Subject, MDBoxLayout):
     def final_remove(self, task_item):
         """Remove task after animation completes."""
         self.remove_widget(task_item)
-
-    def update_display(self):
-        """Update UI with sorted tasks."""
-        self.clear_widgets()
-        sorted_tasks = sorted(self.tasks)  # Convert heap to sorted list
-
-        for task in sorted_tasks:
-            task_item = OneLineAvatarIconListItem(text=f"{task.title} (Priority: {task.priority})")
-            task_item.add_widget(MDIconButton(icon="check", on_release=lambda x: self.remove_task(task_item)))
-            self.add_widget(task_item)

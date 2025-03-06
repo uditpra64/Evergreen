@@ -22,6 +22,8 @@ class TreeGrowthFSM:
         self.current_stage = 0
         self.growth_score = 0.0  # cumulative points from all user activity
         self.total_stages = len(self.tree_images)
+        # Add this line to define points_per_stage
+        self.points_per_stage = 10.0  # Points needed to advance to next stage
 
     def update_growth(self, hours=0.0, laps=0, tasks=0):
         WEIGHT_HOURS = 2.0   # each hour studied is worth 2 points

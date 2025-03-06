@@ -1,5 +1,3 @@
-# Minimum tested versions – adjust as needed.
-
 kivy==2.2.0
 kivymd==1.1.1
 Pillow==9.5.0

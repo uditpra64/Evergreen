@@ -23,6 +23,7 @@ class StudyData(EventDispatcher):
         }
         # Load existing data from JSON if available
         self.load_data()
+        Clock.schedule_interval(self.update_minutes, 60)
 
     def set_study_hours(self, date_str, hours):
         """
