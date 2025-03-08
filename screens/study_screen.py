@@ -167,8 +167,8 @@ class StudyScreen(MDScreen):
                 self.show_validation_dialog("Minimum study time is 0.5 hours (30 minutes).")
                 return
             
-            # Add burnout warning for study sessions longer than 24 hours
-            if hours > 24:
+            # Add burnout warning for study sessions longer than 10 hours
+            if hours > 10:
                 self.show_burnout_warning(hours)
                 return
                 
@@ -193,10 +193,10 @@ class StudyScreen(MDScreen):
         Clock.schedule_once(lambda dt: self.switch_to_tree_screen(), 2)
 
     def show_burnout_warning(self, hours):
-        """Show a warning dialog for study sessions longer than 24 hours"""
+        """Show a warning dialog for study sessions longer than 10 hours"""
         dialog = MDDialog(
             title="Burnout Warning",
-            text="Studying for more than 24 hours is not recommended and may lead to burnout. Would you like to proceed anyway or adjust your study time?",
+            text="Studying for more than 10 hours is not recommended and may lead to burnout. Would you like to proceed anyway or adjust your study time?",
             buttons=[
                 MDFlatButton(
                     text="ADJUST TIME",

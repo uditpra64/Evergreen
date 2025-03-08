@@ -21,6 +21,7 @@ from kivy.uix.screenmanager import Screen, ScreenManager
 from kivy.metrics import dp
 from kivy.animation import Animation
 from datetime import date
+
 from cloud import Cloud
 from core.pomodoro import PomodoroWidget, PomodoroState
 from core.right_drawer import RightDrawer
@@ -179,8 +180,12 @@ class TreeScreen(MDScreen):
         self.task_manager = TaskManager()
         self.fsm = TreeGrowthFSM()
         
+        # Get only current day's study hours instead of cumulative total
+        today_str = date.today().isoformat()
+        current_day_hours = study_data.get_data()["study_hours"].get(today_str, 0)
+        
         # Set the study hours for time-based tree growth
-        self.total_study_hours = self.study_data.get_data()["total_hours"]
+        self.total_study_hours = current_day_hours
         self.total_minutes = self.total_study_hours * 60
         self.tree_stages = 11  # Total number of tree images
         
@@ -222,21 +227,24 @@ class TreeScreen(MDScreen):
         self.study_data.reset_minutes()
 
         # Load stored study hours from StudyData
-        self.total_study_hours = self.study_data.get_data()["total_hours"]
+        self.total_study_hours = current_day_hours
 
         # Tree images - update to include all 11 images
         self.tree_folder = os.path.join(os.path.dirname(__file__), "..", "images", "tree_images")
         self.image_paths = [os.path.join(self.tree_folder, f"{i}.png") for i in range(1, 12)]
         self.image_index = 0
+        
+        # Base dimensions for tree
+        self.base_tree_width = 300
+        self.base_tree_height = 400
 
         # Create the tree image - DON'T set pos_hint
         self.tree_image = Image(
             source=self.image_paths[self.image_index],
             size_hint=(None, None),
-            size=(300, 400)
+            size=(self.base_tree_width, self.base_tree_height)
         )
         self.layout.add_widget(self.tree_image)
-        # Position will be set in reposition_tree
         
         # Update tree growth initially
         self.update_tree_image()
@@ -252,16 +260,22 @@ class TreeScreen(MDScreen):
             width=200,
         )
         self.layout.add_widget(self.back_button)
-
-
-        # Get only current day's study hours instead of cumulative total
-        today_str = date.today().isoformat()
-        current_day_hours = study_data.get_data()["study_hours"].get(today_str, 0)
         
-        # Create PomodoroCard using ONLY the current day's hours
-        self.pomodoro_card = PomodoroCard(current_day_hours)
-        self.layout.add_widget(self.pomodoro_card)
+        # Add Debug Button for cycling through tree images
+        self.debug_button = MDRaisedButton(
+            text=f"Tree: 1/{len(self.image_paths)}",
+            size_hint=(None, None),
+            size=(150, 40),
+            pos_hint={"left": 0.05, "top": 0.95},
+            on_release=self.cycle_tree_image,
+            opacity=0,      # Make it invisible
+            disabled=True   # Disable interaction
+        )
+        self.layout.add_widget(self.debug_button)
 
+        # Create PomodoroCard using only the current day's hours
+        self.pomodoro_card = PomodoroCard(self.total_study_hours)
+        self.layout.add_widget(self.pomodoro_card)
         # Timer will start in on_enter
 
         # Clouds
@@ -314,6 +328,13 @@ class TreeScreen(MDScreen):
         # Store the completion popup so we only show it once
         self.completion_popup_shown = False
     
+    def cycle_tree_image(self, instance):
+        """Debug function to cycle through tree images"""
+        # Cycle to the next image
+        self.image_index = (self.image_index + 1) % len(self.image_paths)
+        self.update_tree_image()
+        # Update button text
+        self.debug_button.text = f"Tree: {self.image_index + 1}/{len(self.image_paths)}"
 
     def spawn_one_cloud_randomly(self, dt):
         """Spawn a cloud with random size and speed"""
@@ -377,7 +398,10 @@ class TreeScreen(MDScreen):
         self.right_drawer.update_triangle()
 
     def reposition_tree(self, instance=None, value=None):
-        """Position the tree at the center of the screen over the ground"""
+        """
+        Position the tree at the center of the screen over the ground.
+        Ensures all trees regardless of size are properly centered and planted.
+        """
         # Get base dimensions for positioning
         floor_height = 96  # Height of floor.png
         grass_height = 64  # Height of grass.png
@@ -390,11 +414,20 @@ class TreeScreen(MDScreen):
         tree_x = window_center - (self.tree_image.width // 2)
         
         # Calculate the y position to plant the tree in the ground
-        tree_y = ground_level - 40
+        # For smaller trees (early stages), we need less of the image to be below ground
+        # For larger trees (later stages), we need more of the image to be below ground
+        # Base plant depth (% of image height that should be below ground)
+        base_plant_depth = 0.070  # 10% of image height for first tree
+        
+        # Calculate planting depth based on growth stage
+        plant_depth = base_plant_depth + (0.009 * self.image_index)  # Gradually increase depth
+        
+        # Calculate y position
+        tree_y = ground_level - (self.tree_image.height * plant_depth)
         
         # Set the tree position absolutely
         self.tree_image.pos = (tree_x, tree_y)
-        print(f"Tree positioned at ({tree_x}, {tree_y})")
+        print(f"Tree positioned at ({tree_x}, {tree_y}) with stage {self.image_index+1}")
 
     def _update_bg(self, *args):
         self.bg_rect.pos = self.layout.pos
@@ -404,7 +437,12 @@ class TreeScreen(MDScreen):
     def on_study_update(self, instance, data):
         """When study data changes, update the tree and reset pomodoro"""
         old_hours = self.total_study_hours
-        self.total_study_hours = data["total_hours"]
+        
+        # Get only current day's study hours
+        today_str = date.today().isoformat()
+        current_day_hours = data["study_hours"].get(today_str, 0)
+        
+        self.total_study_hours = current_day_hours
         self.total_minutes = self.total_study_hours * 60
         
         # Recalculate minutes per stage with new hours
@@ -427,6 +465,9 @@ class TreeScreen(MDScreen):
         
         # Reset the completion popup flag
         self.completion_popup_shown = False
+        
+        # Update debug button text
+        self.debug_button.text = f"Tree: 1/{len(self.image_paths)}"
 
     def check_tree_growth(self, dt):
         """Check if it's time to grow the tree (called every minute)"""
@@ -442,9 +483,15 @@ class TreeScreen(MDScreen):
                 self.image_index = new_stage
                 print(f"Tree growing to stage {new_stage+1} after {self.elapsed_minutes} minutes")
                 self.update_tree_image(animate=True)
+                
+                # Update debug button text
+                self.debug_button.text = f"Tree: {self.image_index + 1}/{len(self.image_paths)}"
 
     def update_tree_image(self, animate=False):
-        """Update the tree image and optionally animate the growth"""
+        """
+        Update the tree image and optionally animate the growth.
+        Applies size scaling based on growth stage.
+        """
         # Ensure image_index is within bounds
         if self.image_index < 0:
             self.image_index = 0
@@ -453,13 +500,34 @@ class TreeScreen(MDScreen):
             
         # Update image
         self.tree_image.source = self.image_paths[self.image_index]
+        
+        # Calculate scaling factor based on growth stage
+        # Start small (50%) and grow gradually to full size (100%)
+        min_scale = 0.2  # 50% of size for first image
+        max_scale = 1.7  # 100% of size for last image
+        
+        # Calculate growth progression (0 to 1)
+        if len(self.image_paths) > 1:
+            progress = self.image_index / (len(self.image_paths) - 1)
+        else:
+            progress = 0
+            
+        # Apply scaling with slight exponential growth curve
+        # This makes early growth slower and later growth faster
+        current_scale = min_scale + ((max_scale - min_scale) * (progress ** 0.8))
+        
+        # Apply scaling to the tree image
+        self.tree_image.size = (
+            self.base_tree_width * current_scale, 
+            self.base_tree_height * current_scale
+        )
+        
         self.tree_image.reload()
         
         # If animation requested
         if animate:
             # Remember the original size so we can animate correctly
             orig_size = self.tree_image.size
-            orig_pos = self.tree_image.pos
             
             # First slightly grow the tree
             grow_anim = Animation(size=(orig_size[0] * 1.2, orig_size[1] * 1.2), 
@@ -475,7 +543,7 @@ class TreeScreen(MDScreen):
             # Make sure tree stays in position after animation
             Clock.schedule_once(lambda dt: self.reposition_tree(), 0.7)
         
-        print(f"Tree image updated: {self.image_paths[self.image_index]}")
+        print(f"Tree image updated: {self.image_paths[self.image_index]} (scale: {current_scale:.2f})")
         
         # Make sure tree is properly positioned
         self.reposition_tree()
@@ -601,46 +669,6 @@ class TreeScreen(MDScreen):
                 pos=(i * grass_width, floor_height)
             )
             self.layout.add_widget(grass)
-
-    def spawn_one_cloud_randomly(self, dt):
-        """Spawn a cloud with random size and speed"""
-        # Check if we have too many clouds already
-        cloud_count = sum(1 for child in self.layout.children if isinstance(child, Cloud))
-        
-        if cloud_count > 5:  # Limit total clouds to 5
-            # Still schedule next spawn, but don't create a new cloud
-            next_delay = random.uniform(5, 10)  # Longer delay between spawns
-            Clock.schedule_once(self.spawn_one_cloud_randomly, next_delay)
-            return
-        
-        cloud_path = os.path.join(os.path.dirname(__file__), "..", "images", "cloud.png")
-        
-        # Use slower speed range
-        speed = random.uniform(15, 35)
-        
-        # Vary cloud size
-        size_factor = random.uniform(0.5, 1.5)
-        
-        # Create the cloud with random speed and size
-        cloud = Cloud(
-            source=cloud_path, 
-            speed=speed,
-            size_factor=size_factor
-        )
-        
-        # Position cloud off-screen to the left
-        cloud.size_hint = (None, None)
-        
-        # Vary vertical position more
-        height_range = Window.height // 3
-        cloud.y = random.randint(Window.height - height_range, Window.height - 20)
-        cloud.x = -cloud.width
-        
-        self.layout.add_widget(cloud)
-        
-        # Use longer delays between spawns
-        next_delay = random.uniform(5, 15)  # 5-15 seconds between clouds
-        Clock.schedule_once(self.spawn_one_cloud_randomly, next_delay)
 
     def show_tree_growth_notification(self, message):
         """Show a temporary notification for tree growth"""
